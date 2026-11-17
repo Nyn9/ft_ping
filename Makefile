@@ -26,7 +26,7 @@ ${PROG}:	${OBJS}
 					@echo "\033[33m----Compiling lib----"
 					@if [ -f $(LIBPATH)/Makefile ]; then make -s -C $(LIBPATH); fi
 					@echo "\n"
-					$(CC) $(CFLAGS) ${OBJS} $(LIBPATH)/$(LIBFT) -o ${PROG}
+					$(CC) $(CFLAGS) ${OBJS} $(LIBPATH)/$(LIBFT) -o ${PROG} -lm
 					@echo "\033[32m ft_ping Compiled! ᕦ(\033[31m♥\033[32m_\033[31m♥\033[32m)ᕤ\n"
 
 clean:

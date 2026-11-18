@@ -15,4 +15,5 @@ typedef struct s_info
 	double	min;
 	double	avg;
 	double	stddev;
+	double	time;
 }					t_info;

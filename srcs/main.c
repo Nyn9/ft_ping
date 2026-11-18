@@ -128,15 +128,16 @@ t_info ping_loop(int s, struct sockaddr_in sAddr, struct sockaddr_in cAddr, uint
 	t_info info;
 	socklen_t cLen = sizeof(cAddr);
 	unsigned char buf[256];
-	struct timeval sendStart = {0, 0}, recvStart, last;
+	struct timeval sendStart = {0, 0}, recvStart, last, first;
 	char ip[INET_ADDRSTRLEN];
 	gettimeofday(&last, NULL);
+	gettimeofday(&first, NULL);
 
 	signal(SIGINT, handle_sigint);
 
 	memset(&info, 0, sizeof(info));
-	// int ttl = 1;
-	// setsockopt(s, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
+	int ttl = 1;
+	setsockopt(s, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
 	while (!g_stop) {
 		double diff = (last.tv_sec - sendStart.tv_sec) * 1000.0 + (last.tv_usec - sendStart.tv_usec) / 1000.0;
 		if (diff >= 1000.0) {
@@ -156,29 +157,30 @@ t_info ping_loop(int s, struct sockaddr_in sAddr, struct sockaddr_in cAddr, uint
 			if (!(ret = check_packet(buf, recv, headerSize)))
 				continue;
 			inet_ntop(AF_INET, &cAddr.sin_addr, ip, sizeof(ip));
-			printf("%zd bytes from %s: ", recv - headerSize, ip);
+			//TODO: seq no increment need correct
+			size_t seq = (buf[headerSize + 6] << 8) | buf[headerSize + 7];
 			if (ret == 2) {
-				printf("Time to live exceeded\n");
+				printf("From %s icmp_seq=%zu Time to live exceeded\n", ip, seq);
 				if (arg & 1)
 					print_ip_dump(buf, recv, headerSize);
 				continue;
 			}
+			printf("%zd bytes from %s: ", recv - headerSize, ip);
 			memcpy(&recvStart, buf + headerSize + 8, sizeof(struct timeval));
 			double time = (last.tv_sec - recvStart.tv_sec) * 1000.0 + (last.tv_usec - recvStart.tv_usec) / 1000.0;
-			size_t seq = (buf[headerSize + 6] << 8) | buf[headerSize + 7];
-			printf("icmp_seq=%zu ttl=%d time=%.3f ms\n", seq, buf[8], time);
+			printf("icmp_seq=%zu ttl=%d time=%.2f ms\n", seq, buf[8], time);
 			info.received++;
 			store_value(&info, time);
 		}
 	}
+	info.time = (last.tv_sec - first.tv_sec) * 1000.0 + (last.tv_usec - first.tv_usec) / 1000.0;
 	return (info);
 }
 
 void print_help() {
-	printf("Usage: ./ft_ping [OPTION...] HOST ...\n"
-		"Send ICMP ECHO_REQUEST packets to network hosts.\n"
+	printf("Usage: ./ft_ping [options] <destination>\n"
 		"\n"
-		" Options valid for all request types:\n"
+		" Options:\n"
 		"\n"
 		"  -v,			verbose output\n"
 		"\n"
@@ -198,6 +200,10 @@ uint8_t check_arg(int ac, char **av, int *pos) {
 				arg = 1;
 		} else if (!*pos)
 			*pos = i;
+		else {
+			printf("ping: record route: Operation not permitted\n");
+			exit(EXIT_FAILURE);
+		}
 	}
 	return arg;
 }
@@ -206,7 +212,7 @@ int main(int ac, char **av) {
 	int posHostname = 0;
 	uint8_t arg = check_arg(ac, av, &posHostname);
 	if (!posHostname) {
-		ft_putstr_fd("ping: missing host operand\n", 2);
+		printf("ping: usage error: Destination address required\n");
 		return 1;
 	}
 
@@ -221,7 +227,7 @@ int main(int ac, char **av) {
 
 	int status = getaddrinfo(av[posHostname], NULL, &hints, &res);
 	if (status != 0) {
-		ft_putstr_fd("ping: unknow host\n", 2);
+		printf("ping: %s: Temporary failure in name resolution\n", av[posHostname]);
 		return 1;
 	}
 
@@ -237,17 +243,17 @@ int main(int ac, char **av) {
         exit(EXIT_FAILURE);
     }
 
-	uint16_t pid = getpid() & 0xFFFF;
-	printf("PING %s (%s): %zu data bytes", av[posHostname], ip, dataSize);
-	if (arg & 1)
-		printf(", id 0x%04x = %d", pid, pid);
-	printf("\n");
+	if (arg & 1) {
+		//TODO : Ligne ici
+		ft_printf("ai->ai_family: AF_INET, ai->ai_canonname: '%s'", av[posHostname]);
+	}
+	printf("PING %s (%s): %zu(%zu) data bytes\n", av[posHostname], ip, dataSize, dataSize + 8 + 20);
 	t_info info = ping_loop(s, sAddr, cAddr, arg);
 	uint8_t loss = ((info.send - info.received) * 100) / info.send;
-	printf("--- %s ping statistics ---\n", av[posHostname]);
-	printf("%d packets transmitted, %d packets received, %d%% packet loss\n", info.send, info.received, loss);
+	printf("\n--- %s ping statistics ---\n", av[posHostname]);
+	printf("%d packets transmitted, %d received, %d%% packet loss, time %.0fms\n", info.send, info.received, loss, info.time);
 	if (info.received > 0)
-		printf("round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/%.3f ms\n", info.min, info.avg, info.max, info.stddev);
+		printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", info.min, info.avg, info.max, info.stddev);
 
     close(s);
     return 0;
